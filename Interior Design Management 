@@ -1,0 +1,682 @@
+import flask as Flask
+import mysql.connector
+import numpy as np
+import pandas as pd
+
+from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
+
+app = Flask.Flask(__name__)
+
+app.secret_key = "interior_design_secret_key"
+
+# MySQL Database Connection
+
+db = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    password="932512",
+    database="interior_management"
+)
+
+cursor = db.cursor(dictionary=True)
+
+password = generate_password_hash("admin123")
+
+cursor.execute(
+    "INSERT IGNORE INTO users (username, password) VALUES (%s, %s)",
+    ("admin", password)
+)
+
+db.commit()
+
+# LOGIN REQUIRED DECORATOR
+
+def login_required(func):
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+
+        if 'username' not in Flask.session:
+            return Flask.redirect('/login')
+
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+# LOGIN PAGE
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+
+    if 'username' in Flask.session:
+        return Flask.redirect('/')
+
+    if Flask.request.method == 'POST':
+
+        username = Flask.request.form['username']
+        password = Flask.request.form['password']
+
+        cursor.execute(
+            "SELECT * FROM users WHERE username=%s",
+            (username,)
+        )
+
+        user = cursor.fetchone()
+
+        if user and check_password_hash(user['password'], password):
+
+            Flask.session['username'] = username
+
+            return Flask.redirect('/')
+
+        else:
+
+            return """
+            <div class="login-container">
+                <h2>Login Failed!</h2>
+                <p>Invalid Username or Password</p>
+                <a href="/login">Try Again</a>
+            </div>
+            """
+
+    return """
+    <div class="login-container">
+
+        <h1>Interior Design</h1>
+
+        <p>Project & Furniture Management System</p>
+
+        <h2>Welcome Back!</h2>
+
+        <form method="POST">
+
+            <input
+                type="text"
+                name="username"
+                placeholder="Enter Username"
+                required
+            >
+
+            <input
+                type="password"
+                name="password"
+                placeholder="Enter Password"
+                required
+            >
+
+            <button type="submit">Login</button>
+
+        </form>
+
+        <p>Secure Management Portal</p>
+
+    </div>
+    """
+
+
+# LOGOUT PAGE
+
+@app.route('/logout')
+def logout():
+
+    Flask.session.clear()
+
+    return Flask.redirect('/login')
+
+# HOME PAGE / DASHBOARD
+
+@app.route('/')
+@login_required
+def home():
+
+    cursor.execute("SELECT COUNT(*) AS total FROM projects")
+    projects = cursor.fetchone()['total']
+
+    cursor.execute("SELECT COUNT(*) AS total FROM furniture")
+    furniture = cursor.fetchone()['total']
+
+    cursor.execute("SELECT COUNT(*) AS total FROM suppliers")
+    suppliers = cursor.fetchone()['total']
+
+    cursor.execute("SELECT SUM(total_cost) AS total FROM procurement")
+    expenses = cursor.fetchone()['total'] or 0
+
+    return f"""
+    <html>
+    <head>
+        <title>Interior Design Management System</title>
+        <style>
+            body {{
+                font-family: Arial;
+                background: #f2f2f2;
+                text-align: center;
+            }}
+            h1 {{ color: #263238; }}
+            .box {{
+                background: white;
+                padding: 20px;
+                margin: 15px;
+                display: inline-block;
+                width: 200px;
+                border-radius: 10px;
+                box-shadow: 0 2px 8px #bbb;
+            }}
+            a {{
+                display: inline-block;
+                padding: 10px;
+                margin: 8px;
+                background: #263238;
+                color: white;
+                text-decoration: none;
+                border-radius: 5px;
+            }}
+        </style>
+    </head>
+
+    <body>
+
+    <h1>Interior Design Project Management System</h1>
+
+    <div class="box">
+        <h2>{projects}</h2>
+        <p>Total Projects</p>
+    </div>
+
+    <div class="box">
+        <h2>{furniture}</h2>
+        <p>Total Furniture</p>
+    </div>
+
+    <div class="box">
+        <h2>{suppliers}</h2>
+        <p>Total Suppliers</p>
+    </div>
+
+    <div class="box">
+        <h2>₹{expenses}</h2>
+        <p>Total Expenses</p>
+    </div>
+
+    <br>
+
+    <a href="/add_project">Add Project</a>
+    <a href="/projects">View Projects</a>
+    <a href="/add_furniture">Add Furniture</a>
+    <a href="/furniture">View Furniture</a>
+    <a href="/add_supplier">Add Supplier</a>
+    <a href="/suppliers">View Suppliers</a>
+    <a href="/procurement">Procurement</a>
+    <a href="/analysis">Budget Analysis</a>
+
+    </body>
+    </html>
+    """
+CSS = """
+<style>
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f1f5f9;
+    color: #1e293b;
+}
+
+h1 {
+    text-align: center;
+    color: #1e293b;
+}
+
+h2 {
+    color: #334155;
+}
+
+form {
+    background: white;
+    width: 350px;
+    margin: 40px auto;
+    padding: 30px;
+    border-radius: 15px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+}
+
+input, select {
+    width: 100%;
+    padding: 12px;
+    margin: 10px 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 7px;
+    box-sizing: border-box;
+}
+
+input:focus {
+    outline: none;
+    border-color: #2563eb;
+}
+
+button {
+    width: 100%;
+    padding: 12px;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+button:hover {
+    background: #1d4ed8;
+}
+
+a {
+    display: inline-block;
+    background: #334155;
+    color: white;
+    padding: 12px 18px;
+    margin: 8px;
+    border-radius: 7px;
+    text-decoration: none;
+}
+
+a:hover {
+    background: #2563eb;
+}
+
+.box {
+    background: white;
+    padding: 25px;
+    margin: 15px;
+    display: inline-block;
+    width: 180px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.box h2 {
+    color: #2563eb;
+    font-size: 28px;
+}
+
+.dashboard {
+    text-align: center;
+    padding: 30px;
+}
+
+.login-container {
+    width: 350px;
+    margin: 100px auto;
+    background: white;
+    padding: 35px;
+    border-radius: 18px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+}
+
+.login-container h1 {
+    color: #2563eb;
+}
+
+.login-container p {
+    text-align: center;
+    color: #64748b;
+}
+
+.logout {
+    background: #dc2626;
+}
+
+.logout:hover {
+    background: #b91c1c;
+}
+
+</style>
+"""
+
+@app.after_request
+def add_css(response):
+
+    if response.content_type and "text/html" in response.content_type:
+        html = response.get_data(as_text=True)
+
+        if "</head>" in html:
+            html = html.replace("</head>", CSS + "</head>", 1)
+        else:
+            html = CSS + html
+
+        response.set_data(html)
+
+    return response
+
+# ADD PROJECT
+
+@app.route('/add_project', methods=['GET', 'POST'])
+@login_required
+def add_project():
+
+    if Flask.request.method == 'POST':
+
+        name = Flask.request.form['name']
+        client = Flask.request.form['client']
+        location = Flask.request.form['location']
+        budget = float(Flask.request.form['budget'])
+        status = Flask.request.form['status']
+
+        sql = """INSERT INTO projects
+        (project_name, client_name, location, budget, status)
+        VALUES (%s,%s,%s,%s,%s)"""
+
+        cursor.execute(sql, (name, client, location, budget, status))
+        db.commit()
+
+        return "Project Added Successfully! <a href='/'>Home</a>"
+
+    return """
+    <h2>Add Interior Design Project</h2>
+
+    <form method="POST">
+        Project Name: <input name="name" required><br><br>
+        Client Name: <input name="client" required><br><br>
+        Location: <input name="location" required><br><br>
+        Budget: <input type="number" step="0.01" name="budget" required><br><br>
+
+        Status:
+        <select name="status">
+            <option>Planning</option>
+            <option>In Progress</option>
+            <option>Completed</option>
+        </select><br><br>
+
+        <button type="submit">Add Project</button>
+    </form>
+    """
+
+
+# VIEW PROJECTS
+
+@app.route('/projects')
+@login_required
+def projects():
+
+    cursor.execute("SELECT * FROM projects")
+    data = cursor.fetchall()
+
+    result = "<h2>Interior Design Projects</h2>"
+
+    for p in data:
+        result += f"""
+        <p>
+        ID: {p['id']} |
+        Project: {p['project_name']} |
+        Client: {p['client_name']} |
+        Location: {p['location']} |
+        Budget: ₹{p['budget']} |
+        Status: {p['status']}
+        </p>
+        """
+
+    return result + "<br><a href='/'>Home</a>"
+
+
+# ADD FURNITURE
+
+@app.route('/add_furniture', methods=['GET', 'POST'])
+@login_required
+def add_furniture():
+
+    if Flask.request.method == 'POST':
+
+        name = Flask.request.form['name']
+        category = Flask.request.form['category']
+        price = float(Flask.request.form['price'])
+
+        sql = """INSERT INTO furniture
+        (furniture_name, category, price)
+        VALUES (%s,%s,%s)"""
+
+        cursor.execute(sql, (name, category, price))
+        db.commit()
+
+        return "Furniture Added Successfully! <a href='/'>Home</a>"
+
+    return """
+    <h2>Add Furniture</h2>
+
+    <form method="POST">
+
+        Furniture Name:
+        <input name="name" required><br><br>
+
+        Category:
+        <input name="category" required><br><br>
+
+        Price:
+        <input type="number" step="0.01" name="price" required><br><br>
+
+        <button type="submit">Add Furniture</button>
+
+    </form>
+    """
+
+
+# VIEW FURNITURE
+
+@app.route('/furniture')
+@login_required
+def furniture():
+
+    cursor.execute("SELECT * FROM furniture")
+    data = cursor.fetchall()
+
+    result = "<h2>Furniture Inventory</h2>"
+
+    for f in data:
+        result += f"""
+        <p>
+        ID: {f['id']} |
+        Name: {f['furniture_name']} |
+        Category: {f['category']} |
+        Price: ₹{f['price']}
+        </p>
+        """
+
+    return result + "<br><a href='/'>Home</a>"
+
+
+# ADD SUPPLIER
+
+@app.route('/add_supplier', methods=['GET', 'POST'])
+@login_required
+def add_supplier():
+
+    if Flask.request.method == 'POST':
+
+        name = Flask.request.form['name']
+        contact = Flask.request.form['contact']
+        email = Flask.request.form['email']
+
+        sql = """INSERT INTO suppliers
+        (supplier_name, contact, email)
+        VALUES (%s,%s,%s)"""
+
+        cursor.execute(sql, (name, contact, email))
+        db.commit()
+
+        return "Supplier Added Successfully! <a href='/'>Home</a>"
+
+    return """
+    <h2>Add Supplier</h2>
+
+    <form method="POST">
+
+        Supplier Name:
+        <input name="name" required><br><br>
+
+        Contact:
+        <input name="contact" required><br><br>
+
+        Email:
+        <input type="email" name="email" required><br><br>
+
+        <button type="submit">Add Supplier</button>
+
+    </form>
+    """
+
+
+# VIEW SUPPLIERS
+
+@app.route('/suppliers')
+@login_required
+def suppliers():
+
+    cursor.execute("SELECT * FROM suppliers")
+    data = cursor.fetchall()
+
+    result = "<h2>Supplier Details</h2>"
+
+    for s in data:
+        result += f"""
+        <p>
+        ID: {s['id']} |
+        Name: {s['supplier_name']} |
+        Contact: {s['contact']} |
+        Email: {s['email']}
+        </p>
+        """
+
+    return result + "<br><a href='/'>Home</a>"
+
+
+# FURNITURE PROCUREMENT
+
+@app.route('/procurement', methods=['GET', 'POST'])
+@login_required
+def procurement():
+
+    if Flask.request.method == 'POST':
+
+        project_id = int(Flask.request.form['project_id'])
+        furniture_id = int(Flask.request.form['furniture_id'])
+        supplier_id = int(Flask.request.form['supplier_id'])
+        quantity = int(Flask.request.form['quantity'])
+
+        cursor.execute(
+            "SELECT price FROM furniture WHERE id=%s",
+            (furniture_id,)
+        )
+
+        item = cursor.fetchone()
+
+        if not item:
+            return "Furniture not found!", 404
+
+        total = item['price'] * quantity
+
+        sql = """INSERT INTO procurement
+        (project_id, furniture_id, supplier_id, quantity, total_cost)
+        VALUES (%s,%s,%s,%s,%s)"""
+
+        cursor.execute(sql, (
+            project_id,
+            furniture_id,
+            supplier_id,
+            quantity,
+            total
+        ))
+
+        db.commit()
+
+        return f"""
+        Procurement Added Successfully!
+        <br>Total Cost: ₹{total}
+        <br><a href='/'>Home</a>
+        """
+
+    return """
+    <h2>Furniture Procurement</h2>
+
+    <form method="POST">
+
+        Project ID:
+        <input type="number" name="project_id" required><br><br>
+
+        Furniture ID:
+        <input type="number" name="furniture_id" required><br><br>
+
+        Supplier ID:
+        <input type="number" name="supplier_id" required><br><br>
+
+        Quantity:
+        <input type="number" name="quantity" min="1" required><br><br>
+
+        <button type="submit">Purchase Furniture</button>
+
+    </form>
+    """
+
+
+# NUMPY AND PANDAS BUDGET ANALYSIS
+
+@app.route('/analysis')
+@login_required
+def analysis():
+
+    cursor.execute("""
+        SELECT
+        p.project_name,
+        p.budget,
+        COALESCE(SUM(pr.total_cost), 0) AS expenses
+        FROM projects p
+        LEFT JOIN procurement pr
+        ON p.id = pr.project_id
+        GROUP BY p.id, p.project_name, p.budget
+    """)
+
+    data = cursor.fetchall()
+
+    if not data:
+        return "No project data available! <a href='/'>Home</a>"
+
+    df = pd.DataFrame(data)
+
+    expenses = np.array(df['expenses'], dtype=float)
+
+    total_expenses = np.sum(expenses)
+    average_expenses = np.mean(expenses)
+    maximum_expenses = np.max(expenses)
+
+    df['remaining_budget'] = df['budget'] - df['expenses']
+
+    result = f"""
+    <h2>Budget Analysis Report</h2>
+
+    <h3>Total Expenses: ₹{total_expenses:.2f}</h3>
+
+    <h3>Average Expenses: ₹{average_expenses:.2f}</h3>
+
+    <h3>Maximum Expenses: ₹{maximum_expenses:.2f}</h3>
+
+    <h3>Project-wise Analysis</h3>
+    """
+
+    for _, row in df.iterrows():
+
+        result += f"""
+        <p>
+        Project: {row['project_name']}<br>
+        Budget: ₹{row['budget']}<br>
+        Expenses: ₹{row['expenses']}<br>
+        Remaining Budget: ₹{row['remaining_budget']}
+        </p>
+        <hr>
+        """
+
+    return result + "<br><a href='/'>Home</a>"
+
+
+# RUN APPLICATION
+
+if __name__ == '__main__':
+    app.run(debug=True)
